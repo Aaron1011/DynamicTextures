@@ -1,11 +1,10 @@
 package com.me.tft_02.dynamictextures.runnables;
 
-import org.bukkit.entity.Player;
-import org.bukkit.scheduler.BukkitRunnable;
 
 import com.me.tft_02.dynamictextures.util.Misc;
+import org.spongepowered.api.entity.living.player.Player;
 
-public class LoadResourceTask extends BukkitRunnable {
+public class LoadResourceTask implements Runnable {
     private Player player;
 
     public LoadResourceTask(Player player) {

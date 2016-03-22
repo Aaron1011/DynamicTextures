@@ -1,23 +1,29 @@
 package com.me.tft_02.dynamictextures.util;
 
-import java.util.HashMap;
-import java.util.LinkedList;
-import java.util.Set;
-
-import org.bukkit.Location;
-import org.bukkit.entity.Player;
-
+import com.google.common.reflect.TypeToken;
 import com.me.tft_02.dynamictextures.DynamicTextures;
-
 import com.sk89q.worldguard.protection.ApplicableRegionSet;
 import com.sk89q.worldguard.protection.managers.RegionManager;
 import com.sk89q.worldguard.protection.regions.ProtectedRegion;
+import ninja.leaping.configurate.objectmapping.ObjectMappingException;
+import org.spongepowered.api.entity.living.player.Player;
+import org.spongepowered.api.world.Location;
+
+import java.util.HashMap;
+import java.util.LinkedList;
+import java.util.List;
 
 public class RegionUtils {
     private final static HashMap<String, String> regionData = new HashMap<String, String>();
 
     public static boolean isTexturedRegion(Location location) {
-        Set<String> worldGuardRegions = DynamicTextures.p.getConfig().getConfigurationSection("WorldGuard_Regions").getKeys(false);
+
+        List<String> worldGuardRegions = null;
+        try {
+            worldGuardRegions = DynamicTextures.p.getConfig().getNode("WorldGuard_Regions").getList(TypeToken.of(String.class));
+        } catch (ObjectMappingException e) {
+            throw new RuntimeException(e);
+        }
 
         for (String name : worldGuardRegions) {
             if (getRegion(location).equalsIgnoreCase("[" + name + "]")) {
@@ -40,7 +46,7 @@ public class RegionUtils {
     }
 
     public static String getRegion(Location location) {
-        RegionManager regionManager = DynamicTextures.p.getWorldGuard().getRegionManager(location.getWorld());
+        /*RegionManager regionManager = DynamicTextures.p.getWorldGuard().getRegionManager(location.getWorld());
         ApplicableRegionSet set = regionManager.getApplicableRegions(location);
         LinkedList<String> parentNames = new LinkedList<String>();
         LinkedList<String> regions = new LinkedList<String>();
@@ -59,7 +65,8 @@ public class RegionUtils {
             regions.remove(name);
         }
 
-        return regions.toString();
+        return regions.toString();*/
+        return null;
     }
 
     public static void setPreviousRegion(Player player, String region) {

@@ -1,11 +1,18 @@
 package com.me.tft_02.dynamictextures.util;
 
+import java.io.FileNotFoundException;
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.util.List;
 import java.util.Set;
 
-import org.bukkit.Location;
-import org.bukkit.entity.Player;
-
+import com.google.common.reflect.TypeToken;
 import com.me.tft_02.dynamictextures.DynamicTextures;
+import ninja.leaping.configurate.objectmapping.ObjectMappingException;
+import org.spongepowered.api.entity.living.player.Player;
+import org.spongepowered.api.resourcepack.ResourcePack;
+import org.spongepowered.api.resourcepack.ResourcePacks;
+import org.spongepowered.api.world.Location;
 
 public class Misc {
 
@@ -20,7 +27,12 @@ public class Misc {
         String world = player.getWorld().getName().toLowerCase();
         url = DynamicTextures.p.getConfig().getString("Worlds." + world);
 
-        Set<String> texturePermissions = DynamicTextures.p.getConfig().getConfigurationSection("Permissions").getKeys(false);
+        List<String> texturePermissions = null;
+        try {
+            texturePermissions = DynamicTextures.p.getConfig().getNode("Permissions").getList(TypeToken.of(String.class));
+        } catch (ObjectMappingException e) {
+            throw new RuntimeException(e);
+        }
 
         for (String name : texturePermissions) {
             if (player.hasPermission("dynamictextures." + name)) {
@@ -42,7 +54,11 @@ public class Misc {
         }
 
         if (isValidUrl(url)) {
-            player.setResourcePack(url);
+            try {
+                player.sendResourcePack(ResourcePacks.fromUri(new URI(url)));
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
         }
     }
 

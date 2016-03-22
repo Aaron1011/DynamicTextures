@@ -1,28 +1,43 @@
 package com.me.tft_02.dynamictextures;
 
-import java.io.File;
-import java.io.IOException;
-
-import org.bukkit.ChatColor;
-import org.bukkit.World;
-import org.bukkit.configuration.file.FileConfiguration;
-import org.bukkit.plugin.Plugin;
-import org.bukkit.plugin.PluginManager;
-import org.bukkit.plugin.java.JavaPlugin;
-
-import com.me.tft_02.dynamictextures.commands.Commands;
 import com.me.tft_02.dynamictextures.listeners.PlayerListener;
 import com.me.tft_02.dynamictextures.runnables.RegionTimerTask;
+import com.me.tft_02.dynamictextures.util.Misc;
+import ninja.leaping.configurate.ConfigurationOptions;
+import ninja.leaping.configurate.commented.CommentedConfigurationNode;
+import ninja.leaping.configurate.hocon.HoconConfigurationLoader;
+import org.spongepowered.api.Sponge;
+import org.spongepowered.api.command.CommandResult;
+import org.spongepowered.api.command.spec.CommandSpec;
+import org.spongepowered.api.config.DefaultConfig;
+import org.spongepowered.api.entity.living.player.Player;
+import org.spongepowered.api.event.Listener;
+import org.spongepowered.api.event.game.state.GamePreInitializationEvent;
+import org.spongepowered.api.plugin.Plugin;
+import org.spongepowered.api.scheduler.Task;
+import org.spongepowered.api.text.Text;
+import org.spongepowered.api.text.format.TextColors;
+import org.spongepowered.api.world.World;
 
-import com.sk89q.worldguard.bukkit.WorldGuardPlugin;
-import net.gravitydevelopment.updater.dynamictextures.Updater;
-import net.gravitydevelopment.updater.dynamictextures.Updater.UpdateResult;
-import net.gravitydevelopment.updater.dynamictextures.Updater.UpdateType;
-import org.mcstats.Metrics;
+import java.io.File;
+import java.io.IOException;
+import java.nio.file.Path;
+import java.util.logging.Logger;
 
-public class DynamicTextures extends JavaPlugin {
+import javax.inject.Inject;
+
+@Plugin(id = "dynamictextures", name = "Dynamic Textures")
+public class DynamicTextures {
     public static DynamicTextures p;
     public static File dynamictextures;
+    public CommentedConfigurationNode config;
+
+    @Inject @DefaultConfig(sharedRoot = false)
+    private Path configPath;
+
+    @Inject public Logger logger;
+
+    private HoconConfigurationLoader loader;
 
     public boolean worldGuardEnabled = false;
 
@@ -32,39 +47,109 @@ public class DynamicTextures extends JavaPlugin {
     /**
      * Run things on enable.
      */
-    @Override
-    public void onEnable() {
+    @Listener
+    public void onPreIni(GamePreInitializationEvent event) {
         p = this;
-        setupConfiguration();
 
-        registerEvents();
-
-        setupWorldGuard();
-        setupFilePaths();
-
-        getCommand("dynamictextures").setExecutor(new Commands());
+        this.initConfig();
+        this.registerEvents();
+        this.setupFilePaths();
+        this.setupCommands();
 
         if (worldGuardEnabled) {
             //Region check timer (Runs every five seconds)
-            new RegionTimerTask().runTaskTimer(this, 0, 5 * 20);
+            Task.builder().delayTicks(0).intervalTicks(5 * 20).execute(new RegionTimerTask()).submit(this);
         }
 
         checkForUpdates();
-
         setupMetrics();
+    }
+
+    public void reloadConfig() {
+        try {
+            this.config = this.loader.load();
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    public CommentedConfigurationNode getConfig() {
+        return this.config;
+    }
+
+    private void setupCommands() {
+        CommandSpec reload = CommandSpec.builder()
+                .permission("dynamictextures.commands.reload")
+                .executor((src, args) -> {
+                    DynamicTextures.p.reloadConfig();
+                    src.sendMessage(Text.of(TextColors.GREEN, "Configuration reloaded."));
+
+                    if (src instanceof Player) {
+                        Misc.loadResourcePack((Player) src);
+                    }
+
+                    return CommandResult.success();
+                }).build();
+
+        CommandSpec refresh = CommandSpec.builder()
+                .permission("dynamictextures.commands.refreshall")
+                .executor((src, args) -> {
+                    src.sendMessage(Text.of(TextColors.GREEN, "Refreshing textures for all players."));
+
+                    for (Player player : Sponge.getServer().getOnlinePlayers()) {
+                        Misc.loadResourcePack(player);
+                        player.sendMessage(Text.of(TextColors.GREEN, "Refreshing textures..."));
+                    }
+
+                    return CommandResult.success();
+                }).build();
+
+        CommandSpec main = CommandSpec.builder()
+                .child(reload, "reload")
+                .child(refresh, "refreshall")
+                .build();
+
+        Sponge.getCommandManager().register(this, main, "dynamictextures");
+
+    }
+
+    private void initConfig() {
+
+        this.loader = HoconConfigurationLoader.builder().setDefaultOptions(ConfigurationOptions.defaults().setShouldCopyDefaults(true)).setPath(this.configPath).build();
+
+        try {
+            this.config = loader.load();
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+
+        this.config.getNode("General.Stats_Tracking").getBoolean(true);
+        this.config.getNode("General.Update_Check").getBoolean(true);
+        for (World world : Sponge.getServer().getWorlds()) {
+            this.config.getNode("Worlds." + world.getName().toLowerCase()).getString("http://url_to_the_resource_pack_here");
+        }
+        this.config.getNode("Permissions.custom_perm_name").getString("http://url_to_the_resource_pack_here");
+        this.config.getNode("WorldGuard_Regions.region_name").getString("http://url_to_the_resource_pack_here");
+        saveConfig();
+    }
+
+    private void saveConfig() {
+        try {
+            this.loader.save(this.config);
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
     }
 
     /**
      * Registers all event listeners
      */
     private void registerEvents() {
-        PluginManager pluginManager = getServer().getPluginManager();
-
         // Register events
-        pluginManager.registerEvents(new PlayerListener(), this);
+        Sponge.getEventManager().registerListeners(this, new PlayerListener());
     }
 
-    private void setupWorldGuard() {
+    /*private void setupWorldGuard() {
         if (getServer().getPluginManager().isPluginEnabled("WorldGuard")) {
             worldGuardEnabled = true;
             getLogger().info("WorldGuard found!");
@@ -79,46 +164,25 @@ public class DynamicTextures extends JavaPlugin {
         }
 
         return (WorldGuardPlugin) plugin;
-    }
+    }*/
 
     public boolean getWorldGuardEnabled() {
         return worldGuardEnabled;
-    }
-
-    private void setupConfiguration() {
-        final FileConfiguration config = this.getConfig();
-        config.addDefault("General.Stats_Tracking", true);
-        config.addDefault("General.Update_Check", true);
-        for (World world : getServer().getWorlds()) {
-            config.addDefault("Worlds." + world.getName().toLowerCase(), "http://url_to_the_resource_pack_here");
-        }
-        config.addDefault("Permissions.custom_perm_name", "http://url_to_the_resource_pack_here");
-        config.addDefault("WorldGuard_Regions.region_name", "http://url_to_the_resource_pack_here");
-        config.options().copyDefaults(true);
-        saveConfig();
-    }
-
-    /**
-     * Run things on disable.
-     */
-    @Override
-    public void onDisable() {
-        this.getServer().getScheduler().cancelTasks(this);
     }
 
     /**
      * Setup the various storage file paths
      */
     private void setupFilePaths() {
-        dynamictextures = getFile();
+        //dynamictextures = getFile();
     }
 
     private void checkForUpdates() {
-        if (!getConfig().getBoolean("General.Update_Check")) {
+        if (!this.config.getNode("General.Update_Check").getBoolean()) {
             return;
         }
 
-        Updater updater = new Updater(this, 48782, dynamictextures, UpdateType.NO_DOWNLOAD, false);
+        /*Updater updater = new Updater(this, 48782, dynamictextures, UpdateType.NO_DOWNLOAD, false);
 
         if (updater.getResult() != UpdateResult.UPDATE_AVAILABLE) {
             this.updateAvailable = false;
@@ -126,20 +190,16 @@ public class DynamicTextures extends JavaPlugin {
         }
 
         this.updateAvailable = true;
-        this.getLogger().info(ChatColor.GOLD + "DynamicTextures is outdated!");
-        this.getLogger().info(ChatColor.AQUA + "http://dev.bukkit.org/server-mods/worldtextures/");
+        this.logger.info("DynamicTextures is outdated!");
+        this.logger.info("http://dev.bukkit.org/server-mods/worldtextures/");*/
     }
 
     private void setupMetrics() {
-        if (!getConfig().getBoolean("General.Stats_Tracking")) {
+        if (!config.getNode("General.Stats_Tracking").getBoolean()) {
             return;
         }
 
-        try {
-            Metrics metrics = new Metrics(this);
-            metrics.start();
-        }
-        catch (IOException e) {
-        }
+        //Metrics metrics = new Metrics(this);
+        //metrics.start();
     }
 }
